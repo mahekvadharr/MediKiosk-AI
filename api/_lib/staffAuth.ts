@@ -32,9 +32,15 @@ export function hashStaffPin(pin: string): string {
 }
 
 export function getMasterHisAdmin() {
+  // In production (incl. Vercel) the admin must be configured explicitly. Without
+  // HIS_ADMIN_PIN the PIN becomes a random value nobody knows, so admin login stays
+  // locked instead of falling back to the default 1234 PIN.
+  const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
   return {
     adminId: process.env.HIS_ADMIN_ID || 'HIS-1234',
-    pinHash: hashStaffPin(process.env.HIS_ADMIN_PIN || '1234'),
+    pinHash: hashStaffPin(
+      process.env.HIS_ADMIN_PIN || (isProduction ? crypto.randomBytes(32).toString('hex') : '1234')
+    ),
     fullName: 'HIS Master Administrator',
     role: 'admin',
     roleTitle: 'Hospital Information System (HIS) Super Administrator',

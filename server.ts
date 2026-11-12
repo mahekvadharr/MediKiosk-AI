@@ -1417,11 +1417,6 @@ Return strictly JSON:
   }
 });
 
-// Health Check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
-});
-
 // -------------------------------------------------------------
 // VERIFIED CLINICAL DOCTORS DIRECTORY (REAL DATABASE RECORDS)
 // -------------------------------------------------------------
@@ -3874,10 +3869,24 @@ function hashStaffPin(pin: string): string {
   return crypto.createHash('sha256').update(String(pin).trim()).digest('hex');
 }
 
+// In production the master admin must be configured explicitly. Without
+// HIS_ADMIN_ID and HIS_ADMIN_PIN the PIN is set to a random value nobody knows,
+// so admin login stays locked instead of falling back to the default 1234 PIN.
+const IS_PRODUCTION_ENV = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
+if (!process.env.HIS_ADMIN_ID || !process.env.HIS_ADMIN_PIN) {
+  console.warn(
+    IS_PRODUCTION_ENV
+      ? '[SECURITY] HIS_ADMIN_ID / HIS_ADMIN_PIN are not set. Admin login is DISABLED until they are configured.'
+      : '[SECURITY] HIS_ADMIN_ID / HIS_ADMIN_PIN are not set. Using the insecure development default (HIS-1234 / 1234).'
+  );
+}
+
 // Master HIS Admin Account Configuration (Exactly ONE account)
 const MASTER_HIS_ADMIN = {
   adminId: process.env.HIS_ADMIN_ID || 'HIS-1234',
-  pinHash: hashStaffPin(process.env.HIS_ADMIN_PIN || '1234'),
+  pinHash: hashStaffPin(
+    process.env.HIS_ADMIN_PIN || (IS_PRODUCTION_ENV ? crypto.randomBytes(32).toString('hex') : '1234')
+  ),
   fullName: 'HIS Master Administrator',
   role: 'admin',
   roleTitle: 'Hospital Information System (HIS) Super Administrator',
@@ -4666,7 +4675,7 @@ app.post('/api/auth/staff-reset-pin', async (req, res) => {
 // -------------------------------------------------------------
 // 3. ADMIN: GET ALL STAFF (Omitting PIN hashes, synced with Supabase)
 // -------------------------------------------------------------
-app.get('/api/admin/staff', async (req, res) => {
+app.get('/api/admin/staff', requireAdminAuth, async (req, res) => {
   // Sync latest from Supabase if table is reachable
   if (supabaseServer) {
     try {
